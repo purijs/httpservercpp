@@ -8,7 +8,8 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
-#include <cstring>
+#include <unordered_map>
+#include <functional>
 #include <iostream>
 
 struct HTTPRequest {
@@ -27,6 +28,9 @@ class TCPServer {
 
         void exit_with_error(const std::string& error_message);
         HTTPRequest parse_request(std::string request);
+        std::string build_response(std::string content, int status_code);
+
+        std::unordered_map<std::string, std::function<std::string()>> routes;
     public:
         TCPServer(std::string ip, int port) : ip(ip), port(port) {;
             m_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -41,6 +45,7 @@ class TCPServer {
         }
         ~TCPServer();
         int startserver();
+        void add_route(std::string path, std::function<std::string()> handler);
 };
 
 #endif //HTTPSERVER_TCPSERVER_H
