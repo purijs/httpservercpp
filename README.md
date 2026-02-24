@@ -2,5 +2,5 @@
 A HTTP Server made from scratch using C++
 
 ```bash
-g++ -o server main.cpp TCPServer.cpp && ./server
+ g++ -std=c++17 -o server main.cpp TCPServer.cpp ThreadPool.cpp -pthread && ./server
 ```

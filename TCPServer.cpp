@@ -4,6 +4,8 @@
 
 #include "TCPServer.h"
 #include <sstream>
+#include <functional>
+#include "HttpResponse.h"
 
 TCPServer::~TCPServer() {
     close(m_socket);
@@ -19,6 +21,40 @@ void TCPServer::add_route(std::string path, std::function<std::string()> handler
     routes[path] = handler;
 }
 
+void TCPServer::handle_client(int client_socket) {
+    char buffer[8192] = {0};
+    ssize_t bytes_read = read(client_socket, buffer, 8192);
+
+    if (bytes_read > 0) {
+        std::string request(buffer);
+        HTTPRequest request_data = parse_request(request);
+
+        std::string content;
+        int status_code = 200;
+
+        if (routes.find(request_data.path) != routes.end()) {
+            std::function<std::string()> handler = routes[request_data.path];
+            content = handler();
+            status_code = 200;
+        } else {
+            HttpResponse<std::string> res("<h1>404 Not Found</h1>", "text/html", 404);
+            status_code = 404;
+            content = res.serialize();
+        }
+
+        std::cout << "Received Request: " << request_data.method << " " << request_data.path << " " << request_data.version << std::endl;
+
+        ssize_t bytes_written = write(client_socket, content.c_str(), content.size());
+
+        if (bytes_written == content.size()) {
+            std::cout << "Response Sent" << std::endl;
+        }
+
+        std::cout << "Thread: " << std::this_thread::get_id() << " finished request for: " << request_data.path << std::endl;
+
+    }
+    close(client_socket);
+}
 
 HTTPRequest TCPServer::parse_request(std::string request) {
     HTTPRequest request_data;
@@ -26,24 +62,6 @@ HTTPRequest TCPServer::parse_request(std::string request) {
 
     request_stream >> request_data.method >> request_data.path >> request_data.version;
     return request_data;
-}
-
-std::string TCPServer::build_response(std::string content, int status_code) {
-    std::string status_text;
-
-    if (status_code == 200) { status_text = "OK"; }
-    else if (status_code == 404) { status_text = "Not Found"; }
-    else status_text = "Internal Server Error";
-
-    std::ostringstream response_stream;
-    response_stream << "HTTP/1.1 " << status_code << " : " << status_text << "\r\n";
-    response_stream << "Content-Type: text/html\r\n";
-    response_stream << "Content-Length: " << content.length() << "\r\n";
-    response_stream << "Server: CPPServer/1.0\r\n";
-    response_stream << "\r\n";
-
-    response_stream << content;
-    return response_stream.str();
 }
 
 int TCPServer::startserver() {
@@ -64,37 +82,8 @@ int TCPServer::startserver() {
         }
 
         std::cout << "Connection established" << std::endl;
+        threadPool.enqueue(std::bind(&TCPServer::handle_client, this, new_socket));
 
-        char buffer[1024] = {0};
-        ssize_t bytes_read = read(new_socket, buffer, 1024);
-
-        if (bytes_read > 0) {
-            std::string request(buffer);
-            HTTPRequest request_data = parse_request(request);
-
-            std::string content;
-            int status_code = 200;
-
-            if (routes.find(request_data.path) != routes.end()) {
-                std::function<std::string()> handler = routes[request_data.path];
-                content = handler();
-                status_code = 200;
-            } else {
-                content = "<html><body><h1>404 Not Found</h1></body></html>";
-                status_code = 404;
-            }
-
-            std::string response = build_response(content, status_code);
-            std::cout << "Received Request: " << request_data.method << " " << request_data.path << " " << request_data.version << std::endl;
-
-            ssize_t bytes_written = write(new_socket, response.c_str(), response.size());
-
-            if (bytes_written == response.size()) {
-                std::cout << "Response Sent" << std::endl;
-            }
-
-        }
-        close(new_socket);
     }
     close(m_socket);
     return 0;
